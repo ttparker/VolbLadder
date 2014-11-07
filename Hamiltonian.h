@@ -19,9 +19,13 @@ class Hamiltonian
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     
     private:
-        Eigen::Matrix<double, nSiteTypes, farthestNeighborCoupling + 1> couplings;
+        Eigen::Matrix<double, nSiteTypes, nSiteTypes> intrabasisCouplings;
         // the row gives the type of site within the lattice basis
         // the column gives the length of the coupling in the stretched-out chain
+        Eigen::Matrix<double, nSiteTypes, farthestInterbasisBond + 1>
+            interbasisCouplings;
+        // the row gives the type of site within the lattice basis
+        // the column gives the number of lattice bases the bond crosses
         std::vector<int> oneSiteQNums;              // one-site quantum numbers
         int targetQNum,                              // targeted quantum number
             lSys;                                      // current system length
@@ -29,15 +33,17 @@ class Hamiltonian
         
         MatrixX_t blockAdjacentSiteJoin(int siteType, int jType,
                                         const std::vector<MatrixX_t>&
-                                            offIRhoBasisH2) const,
+                                            offIRhoBasisH2,
+                                        bool intrabasisBond) const,
                             // jType corresponds to the straightened-out chain,
                             // not the real-space coupling constants
                   lBlockrSiteJoin(int siteType, int jType,
                                   const std::vector<MatrixX_t>& offIRhoBasisH2,
-                                  int compm) const,
+                                  int compm, bool intrabasisBond) const,
                   lSiterBlockJoin(int siteType, int jType, int m,
                                   const std::vector<MatrixX_t>&
-                                      compOffIRhoBasisH2) const,
+                                      compOffIRhoBasisH2,
+                                  bool intrabasisBond) const,
                   siteSiteJoin(int siteType, int m, int compm) const,
                                            // joins the two free sites together
                   blockBlockJoin(int siteType, int l, int comp_l,

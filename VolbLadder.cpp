@@ -27,19 +27,25 @@ Hamiltonian::Hamiltonian() : oneSiteQNums({1, -1})
 void Hamiltonian::setParams(const std::vector<double>& couplingConstants,
                             int targetQNumIn, int lSysIn)
 {
-    couplings << 0., jprime,     0., j1, 0., 0., j2,
-                 0.,     0., jprime, j1, 0., 0., j2,
-                 0., jprime, jprime, 0., 0., 0., 0.;
+    intrabasisCouplings << 0., jprime,     0.,
+                           0.,     0., jprime,
+                           0., jprime, jprime;
+    interbasisCouplings << 0., j1, j2,
+                           0., j1, j2,
+                           0., 0., 0.;
     targetQNum = targetQNumIn;
     lSys = lSysIn;
 };
 
 MatrixX_t Hamiltonian::blockAdjacentSiteJoin(int siteType, int jType,
                                              const std::vector<MatrixX_t>&
-                                             offIRhoBasisH2) const
+                                             offIRhoBasisH2,
+                                             bool intrabasisBond) const
 {
     MatrixX_t plusMinus = kp(offIRhoBasisSigmaplus, sigmaminus);
-    return couplings(siteType, jType)
+    return (intrabasisBond ?
+            intrabasisCouplings(siteType, jType) :
+            interbasisCouplings(siteType, jType))
            * (kp(offIRhoBasisSigmaz, sigmaz)
               + 2 * (plusMinus + plusMinus.adjoint()));
 };
@@ -47,21 +53,26 @@ MatrixX_t Hamiltonian::blockAdjacentSiteJoin(int siteType, int jType,
 MatrixX_t Hamiltonian::lBlockrSiteJoin(int siteType, int jType,
                                        const std::vector<MatrixX_t>&
                                            offIRhoBasisH2,
-                                       int compm) const
+                                       int compm, bool intrabasisBond) const
 {
     MatrixX_t plusMinus = kp(kp(offIRhoBasisSigmaplus, Id(d * compm)),
                              sigmaminus);
-    return couplings((siteType + 1) % nSiteTypes, jType)
+    return (intrabasisBond ?
+            intrabasisCouplings((siteType + 1) % nSiteTypes, jType) :
+            interbasisCouplings((siteType + 1) % nSiteTypes, jType))
            * (kp(kp(offIRhoBasisSigmaz, Id(d * compm)), sigmaz)
               + 2 * (plusMinus + plusMinus.adjoint()));
 };
 
 MatrixX_t Hamiltonian::lSiterBlockJoin(int siteType, int jType, int m,
                                        const std::vector<MatrixX_t>&
-                                       compOffIRhoBasisH2) const
+                                       compOffIRhoBasisH2, bool intrabasisBond)
+                                       const
 {
     MatrixX_t plusMinus = kp(sigmaplus, compOffIRhoBasisSigmaplus.adjoint());
-    return couplings((siteType + jType) % nSiteTypes, jType)
+    return (intrabasisBond ?
+            intrabasisCouplings((siteType + jType) % nSiteTypes, jType) :
+            interbasisCouplings(siteType, jType))
            * kp(kp(Id(m), kp(sigmaz, compOffIRhoBasisSigmaz)
                           + 2 * (plusMinus + plusMinus.adjoint())),
                 Id_d);
@@ -70,7 +81,7 @@ MatrixX_t Hamiltonian::lSiterBlockJoin(int siteType, int jType, int m,
 MatrixX_t Hamiltonian::siteSiteJoin(int siteType, int m, int compm) const
 {
     MatrixX_t plusMinus = kp(kp(sigmaplus, Id(compm)), sigmaminus);
-    return couplings((siteType + 1) % nSiteTypes, 1)
+    return intrabasisCouplings((siteType + 1) % nSiteTypes, 1)
            * kp(Id(m), kp(kp(sigmaz, Id(compm)), sigmaz)
                           + 2 * (plusMinus + plusMinus.adjoint()));
 };
@@ -86,22 +97,44 @@ MatrixX_t Hamiltonian::blockBlockJoin(int siteType, int l, int comp_l,
     MatrixX_t bothBlocks = MatrixX_t::Zero(m * d * compm * d, m * d * compm * d);
     for(int i = 0, end = std::min(l + 1, farthestNeighborCoupling - 2);
         i < end; i++)
-        for(int j = 0,
-            end = std::min(comp_l + 1, farthestNeighborCoupling - i - 2);
-            j < end; j++)
+    {
+        #ifdef basisSizeGreaterThan3
+            for(int j = 0, end = std::min(comp_l + 1, nSiteTypes - i - 3);
+                j < end; j++)
+            {
+                double coupling = intrabasisCouplings((siteType + 2 + j)
+                                                      % nSiteTypes,
+                                                      i + 3 + j);
+                if(coupling)
+                {
+                    MatrixX_t plusMinus = kp(kp(rhoBasisH2[i][0], Id_d),
+                                             kp(compRhoBasisH2[j][0].adjoint(),
+                                                Id_d));
+                    bothBlocks
+                        += coupling * (kp(kp(rhoBasisH2[i][1], Id_d),
+                                          kp(compRhoBasisH2[j][1], Id_d))
+                                       + 2 * (plusMinus + plusMinus.adjoint()));
+                };
+            };      // add block-block bonds that are in the same lattice basis
+        #endif
+        for(int j = (i + 2) / nSiteTypes + 1,
+            end = std::min((i + 3 + comp_l) / nSiteTypes, farthestInterbasisBond);
+            j <= end; j++)
         {
-            double coupling = couplings((siteType + 2 + j) % nSiteTypes,
-                                        i + 3 + j);
+            double coupling = interbasisCouplings((siteType + (i + 1)
+                                                  * (nSiteTypes - 1)) % nSiteTypes,
+                                                  j);
             if(coupling)
             {
                 MatrixX_t plusMinus = kp(kp(rhoBasisH2[i][0], Id_d),
-                                         kp(compRhoBasisH2[j][0].adjoint(),
+                                         kp(compRhoBasisH2[j * nSiteTypes - i - 3][0].adjoint(),
                                             Id_d));
                 bothBlocks
                     += coupling * (kp(kp(rhoBasisH2[i][1], Id_d),
-                                      kp(compRhoBasisH2[j][1], Id_d))
+                                      kp(compRhoBasisH2[j * nSiteTypes - i - 3][1], Id_d))
                                    + 2 * (plusMinus + plusMinus.adjoint()));
             };
-        };
+        };                    // add block-block bonds that cross lattice bases
+    };
     return bothBlocks;
 };

@@ -63,12 +63,18 @@ MatrixX_t TheBlock::createHprime(const TheBlock* block, const Hamiltonian& ham,
                                  std::vector<int>& hprimeQNumList) const
 {
     MatrixX_t hprime = kp(block -> hS, Id_d);
-    for(int i = 1, end = std::min(block -> l + 1, farthestNeighborCoupling);
-        i <= end; i++)
-        if(ham.couplings(block -> siteType, i))
+    for(int i = 1, end = std::min(block -> l + 1, nSiteTypes - 1); i <= end; i++)
+        if(ham.intrabasisCouplings(block -> siteType, i))
             hprime += ham.blockAdjacentSiteJoin(block -> siteType, i,
-                                                block -> rhoBasisH2[i - 1]);
-                                                     // add in longer couplings
+                                                block -> rhoBasisH2[i - 1], true);
+                                                // add in intra-basis couplings
+    for(int i = 1, end = std::min((block -> l + 1) / nSiteTypes,
+                                  farthestInterbasisBond); i <= end; i++)
+        if(ham.interbasisCouplings(block -> siteType, i))
+            hprime += ham.blockAdjacentSiteJoin(block -> siteType, i,
+                                                block -> rhoBasisH2[nSiteTypes * i - 1],
+                                                false);
+                                                // add in inter-basis couplings
     hprimeQNumList = vectorProductSum(block -> qNumList, ham.oneSiteQNums);
                                           // add in quantum numbers of new site
     return hprime;
@@ -129,30 +135,62 @@ HamSolver TheBlock::createHSuperSolver(const stepData& data,
                          // current system size incommensurate with final size?
     {
         int compSiteType = (data.ham.lSys - 4 - l) % nSiteTypes;
-        for(int i = 2, end = std::min(l + 2, farthestNeighborCoupling);
-            i <= end; i++)
-            if(data.ham.couplings((siteType + 1) % nSiteTypes, i))
+
+        // add in intra-basis couplings:
+        for(int i = 2, end = std::min(l + 2, nSiteTypes - 1); i <= end; i++)
+            if(data.ham.intrabasisCouplings((siteType + 1) % nSiteTypes, i))
             {
                 hlBlockrSite += data.ham.lBlockrSiteJoin(siteType, i,
                                                          rhoBasisH2[i - 2],
-                                                         compm) / 2;
+                                                         compm, true) / 2;
                 hlSiterBlock
                     += data.ham.lSiterBlockJoin(compSiteType, i, m,
                                                 data.compBlock
-                                                -> rhoBasisH2[i - 2]) / 2;
+                                                -> rhoBasisH2[i - 2], true) / 2;
             };
-        for(int i = 2, end = std::min(data.compBlock -> l + 2,
-                                      farthestNeighborCoupling); i <= end; i++)
-            if(data.ham.couplings((siteType + i) % nSiteTypes, i))
+        for(int i = 2, end = std::min(data.compBlock -> l + 2, nSiteTypes - 1);
+            i <= end; i++)
+            if(data.ham.intrabasisCouplings((siteType + i) % nSiteTypes, i))
             {
                 hlSiterBlock
                     += data.ham.lSiterBlockJoin(siteType, i, m,
                                                 data.compBlock
-                                                -> rhoBasisH2[i - 2]) / 2;
+                                                -> rhoBasisH2[i - 2], true) / 2;
                 hlBlockrSite
                     += data.ham.lBlockrSiteJoin(compSiteType, i,
-                                                rhoBasisH2[i - 2], compm) / 2;
+                                                rhoBasisH2[i - 2], compm, true)
+                       / 2;
             };
+
+        // add in inter-basis couplings:
+        for(int i = 1, end = std::min((l + 2) / nSiteTypes, farthestInterbasisBond);
+            i <= end; i++)
+            if(data.ham.interbasisCouplings((siteType + 1) % nSiteTypes, i))
+            {
+                hlBlockrSite += data.ham.lBlockrSiteJoin(siteType, i,
+                                                         rhoBasisH2[nSiteTypes * i - 2],
+                                                         compm, false) / 2;
+                hlSiterBlock
+                    += data.ham.lSiterBlockJoin(compSiteType, i, m,
+                                                data.compBlock
+                                                -> rhoBasisH2[nSiteTypes * i - 2],
+                                                false) / 2;
+            };
+        for(int i = 1, end = std::min((data.compBlock -> l + 2) / nSiteTypes,
+                                      farthestInterbasisBond); i <= end; i++)
+            if(data.ham.interbasisCouplings(siteType % nSiteTypes, i))
+            {
+                hlSiterBlock
+                    += data.ham.lSiterBlockJoin(siteType, i, m,
+                                                data.compBlock
+                                                -> rhoBasisH2[i * nSiteTypes - 2],
+                                                false) / 2;
+                hlBlockrSite
+                    += data.ham.lBlockrSiteJoin(compSiteType, i,
+                                                rhoBasisH2[i * nSiteTypes - 2],
+                                                compm, false) / 2;
+            };
+
         hBlockBlock = (data.ham.blockBlockJoin(siteType, l,
                                                data.compBlock -> l, rhoBasisH2,
                                                data.compBlock -> rhoBasisH2)
@@ -163,17 +201,35 @@ HamSolver TheBlock::createHSuperSolver(const stepData& data,
     }
     else
     {
-        for(int i = 2, end = std::min(l + 2, farthestNeighborCoupling);
-            i <= end; i++)
-            if(data.ham.couplings((siteType + 1) % nSiteTypes, i))
+        // add in intra-basis couplings:
+        for(int i = 2, end = std::min(l + 2, nSiteTypes - 1); i <= end; i++)
+            if(data.ham.intrabasisCouplings((siteType + 1) % nSiteTypes, i))
                 hlBlockrSite += data.ham.lBlockrSiteJoin(siteType, i,
-                                                         rhoBasisH2[i - 2], compm);
+                                                         rhoBasisH2[i - 2],
+                                                         compm, true);
         for(int i = 2, end = std::min(data.compBlock -> l + 2,
-                                      farthestNeighborCoupling); i <= end; i++)
-            if(data.ham.couplings((siteType + i) % nSiteTypes, i))
+                                      nSiteTypes - 1); i <= end; i++)
+            if(data.ham.intrabasisCouplings((siteType + i) % nSiteTypes, i))
+                hlSiterBlock
+                    += data.ham.lSiterBlockJoin(siteType, i, m,
+                                                data.compBlock
+                                                -> rhoBasisH2[i - 2], true);
+
+        // add in inter-basis couplings:
+        for(int i = 1, end = std::min((l + 2) / nSiteTypes, farthestInterbasisBond);
+            i <= end; i++)
+            if(data.ham.interbasisCouplings((siteType + 1) % nSiteTypes, i))
+                hlBlockrSite += data.ham.lBlockrSiteJoin(siteType, i,
+                                                         rhoBasisH2[i * nSiteTypes - 2],
+                                                         compm, false);
+        for(int i = 1, end = std::min((data.compBlock -> l + 2) / nSiteTypes,
+                                      farthestInterbasisBond); i <= end; i++)
+            if(data.ham.interbasisCouplings(siteType % nSiteTypes, i))
                 hlSiterBlock += data.ham.lSiterBlockJoin(siteType, i, m,
                                                          data.compBlock
-                                                         -> rhoBasisH2[i - 2]);
+                                                         -> rhoBasisH2[i * nSiteTypes - 2],
+                                                         false);
+
         hBlockBlock = data.ham.blockBlockJoin(siteType, l,
                                               data.compBlock -> l, rhoBasisH2,
                                               data.compBlock -> rhoBasisH2);
@@ -183,7 +239,7 @@ HamSolver TheBlock::createHSuperSolver(const stepData& data,
                           + hBlockBlock
                           + hlSiterBlock
                           + kp(Id(md), hEprime);                  // superblock
-    if(data.ham.couplings((siteType + 1) % nSiteTypes, 1))
+    if(data.ham.intrabasisCouplings((siteType + 1) % nSiteTypes, 1))
         hSuper += data.ham.siteSiteJoin(siteType, m, compm);
     return HamSolver(hSuper, vectorProductSum(hSprimeQNumList, hEprimeQNumList),
                      scaledTargetQNum, psiGround, data.lancTolerance);
