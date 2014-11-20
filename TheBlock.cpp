@@ -29,27 +29,28 @@ TheBlock TheBlock::nextBlock(const stepData& data, rmMatrixX_t& psiGround,
     HamSolver hSuperSolver = createHSuperSolver(data, hSprime, hSprimeQNumList,
                                                 psiGround);
                                            // calculate superblock ground state
-    psiGround = hSuperSolver.lowestEvec;                        // ground state
-    psiGround.resize(m * d, data.compBlock -> m * d);
-    DMSolver rhoSolver(psiGround * psiGround.adjoint(), hSprimeQNumList,
-                       data.mMax);           // find density matrix eigenstates
+    int compm = data.compBlock -> m;
+    hSuperSolver.lowestEvec.resize(m * d, compm * d);
+    DMSolver rhoSolver(hSuperSolver, data.mMax);
+                                             // find density matrix eigenstates
     cumulativeTruncationError += rhoSolver.truncationError;
     primeToRhoBasis = rhoSolver.highestEvecs; // construct change-of-basis matrix
     int nextBlockm = primeToRhoBasis.cols();
     if(!data.infiniteStage) // modify psiGround to predict the next ground state
     {
+        psiGround = hSuperSolver.lowestEvec;
         for(int sPrimeIndex = 0; sPrimeIndex < m * d; sPrimeIndex++)
                 // transpose the environment block and the right-hand free site
         {
             rmMatrixX_t ePrime = psiGround.row(sPrimeIndex);
-            ePrime.resize(data.compBlock -> m, d);
+            ePrime.resize(compm, d);
             ePrime.transposeInPlace();
-            ePrime.resize(1, d * data.compBlock -> m);
+            ePrime.resize(1, d * compm);
             psiGround.row(sPrimeIndex) = ePrime;
         };
         psiGround = primeToRhoBasis.adjoint() * psiGround; 
                                       // change the expanded system block basis
-        psiGround.resize(nextBlockm * d, data.compBlock -> m);
+        psiGround.resize(nextBlockm * d, compm);
         psiGround *= data.beforeCompBlock -> primeToRhoBasis.transpose();
                                           // change the environment block basis
         psiGround.resize(nextBlockm * d * data.beforeCompBlock -> m * d, 1);
@@ -241,8 +242,8 @@ HamSolver TheBlock::createHSuperSolver(const stepData& data,
                           + kp(Id(md), hEprime);                  // superblock
     if(data.ham.intrabasisCouplings((siteType + 1) % nSiteTypes, 1))
         hSuper += data.ham.siteSiteJoin(siteType, m, compm);
-    return HamSolver(hSuper, vectorProductSum(hSprimeQNumList, hEprimeQNumList),
-                     scaledTargetQNum, psiGround, data.lancTolerance);
+    return HamSolver(hSuper, hSprimeQNumList, hEprimeQNumList, scaledTargetQNum,
+                     psiGround, data.lancTolerance);
 };
 
 MatrixX_t TheBlock::changeBasis(const MatrixX_t& mat) const
